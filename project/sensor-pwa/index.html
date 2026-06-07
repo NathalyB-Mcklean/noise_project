@@ -38,7 +38,6 @@
   h1 { font-size: 20px; font-weight: 600; color: #e8f4f0; }
   .subtitle { font-size: 13px; color: #6b8fa8; margin-top: 4px; }
 
-  /* PANTALLA DE CONSENTIMIENTO */
   #consent-screen { display: block; }
   #sensor-screen { display: none; }
   .consent-box {
@@ -73,7 +72,6 @@
   .btn-stop { background: #7A1F1F; color: #ffaaaa; }
   .btn-stop:hover { background: #9a2a2a; }
 
-  /* PANTALLA SENSOR */
   .db-display {
     text-align: center;
     background: #0d1a2e;
@@ -86,14 +84,12 @@
   .db-unit { font-size: 20px; color: #6b8fa8; margin-top: 4px; }
   .db-bar-bg { height: 8px; background: #1a3a5c; border-radius: 4px; margin-top: 16px; overflow: hidden; }
   .db-bar { height: 100%; border-radius: 4px; transition: width 0.5s, background 0.3s; }
-
   .status-badge {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 4px 12px; border-radius: 20px;
     font-size: 12px; font-weight: 500; margin-top: 8px;
   }
   .status-dot { width: 7px; height: 7px; border-radius: 50%; }
-
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
   .info-cell {
     background: #0d1a2e;
@@ -103,7 +99,6 @@
   }
   .info-label { font-size: 10px; color: #6b8fa8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
   .info-value { font-size: 14px; font-weight: 500; color: #e8f4f0; word-break: break-all; }
-
   .log {
     background: #0d1a2e;
     border: 1px solid #1a3a5c;
@@ -117,7 +112,6 @@
   .log p.ok { color: #1D9E75; }
   .log p.warn { color: #EF9F27; }
   .log p.err { color: #E24B4A; }
-
   .topic-display {
     font-size: 10px; color: #6b8fa8;
     font-family: monospace; text-align: center;
@@ -220,24 +214,29 @@
   </div>
 </div>
 
-<!-- MQTT via CDN -->
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
-// =============================================
-// CONFIGURACIÓN — edita estos valores con los
-// datos de tu cuenta HiveMQ Cloud gratuita
-// hivemq.com/mqtt-cloud
-// =============================================
-const MQTT_CONFIG = {
-  host: "3c75291ac00841a5a6f52b8c24db510a.s1.eu.hivemq.cloud",   // <-- reemplaza
-  port: 8884,                             // WebSocket TLS
-  username: "panama_ruido",                 // <-- reemplaza
-  password: "Ruido2026!",              // <-- reemplaza
-  clientId: "sensor_" + Math.random().toString(36).substr(2, 8)
-};
-// =============================================
+// Las credenciales NO están aquí — vienen del servidor via /api/config
+let MQTT_CONFIG = null;
 
-// Mapeo de coordenadas a corregimientos de Ciudad de Panamá
+async function cargarConfig() {
+  try {
+    const res = await fetch("/api/config");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const cfg = await res.json();
+    MQTT_CONFIG = {
+      host:     cfg.mqttHost,
+      port:     cfg.mqttPort,
+      username: cfg.mqttUser,
+      password: cfg.mqttPass,
+      clientId: "sensor_" + Math.random().toString(36).substr(2, 8)
+    };
+    addLog("Configuración cargada desde servidor", "ok");
+  } catch (e) {
+    addLog("Error al cargar configuración: " + e.message, "err");
+  }
+}
+
 const CORREGIMIENTOS = [
   { name: "Bella Vista",    lat: 8.9936,  lon: -79.5197 },
   { name: "San Francisco",  lat: 8.9900,  lon: -79.5050 },
@@ -252,11 +251,11 @@ const CORREGIMIENTOS = [
 ];
 
 let audioContext, analyser, microphone, dataArray;
-let mqttClient = null;
+let mqttClient    = null;
 let readingInterval = null;
 let readingsCount = 0;
-let currentZone = "desconocido";
-let currentLat = null, currentLon = null;
+let currentZone   = "desconocido";
+let currentLat    = null, currentLon = null;
 
 function checkConsent() {
   const checked = document.getElementById("consent-check").checked;
@@ -277,7 +276,7 @@ function addLog(msg, type = "") {
 function nearestCorregimiento(lat, lon) {
   let best = CORREGIMIENTOS[0], bestDist = Infinity;
   CORREGIMIENTOS.forEach(c => {
-    const d = Math.sqrt((c.lat-lat)**2 + (c.lon-lon)**2);
+    const d = Math.sqrt((c.lat - lat) ** 2 + (c.lon - lon) ** 2);
     if (d < bestDist) { bestDist = d; best = c; }
   });
   return best.name;
@@ -289,13 +288,21 @@ function getDb() {
   let sum = 0;
   for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
   const avg = sum / dataArray.length;
-  // Mapeo de 0-255 a rango de dB útil (35-100 dB)
   return Math.round(35 + (avg / 255) * 65);
 }
 
 async function startSensor() {
   document.getElementById("consent-screen").style.display = "none";
   document.getElementById("sensor-screen").style.display = "block";
+
+  // 0) CARGAR CONFIGURACIÓN DESDE SERVIDOR (no desde el código)
+  await cargarConfig();
+  if (!MQTT_CONFIG) {
+    addLog("No se pudo cargar configuración. ¿Está el servidor corriendo?", "err");
+    document.getElementById("consent-screen").style.display = "block";
+    document.getElementById("sensor-screen").style.display = "none";
+    return;
+  }
 
   // 1) MICRÓFONO — Web Audio API
   try {
@@ -307,7 +314,7 @@ async function startSensor() {
     microphone = audioContext.createMediaStreamSource(stream);
     microphone.connect(analyser);
     addLog("Micrófono activado (Web Audio API)", "ok");
-  } catch(e) {
+  } catch (e) {
     addLog("Error al acceder al micrófono: " + e.message, "err");
     return;
   }
@@ -321,7 +328,7 @@ async function startSensor() {
       document.getElementById("gps-display").textContent = `${currentLat}, ${currentLon}`;
       document.getElementById("zone-display").textContent = currentZone;
       document.getElementById("topic-display").textContent =
-        `Tópico: panama/ruido/${currentZone.toLowerCase().replace(/ /g,"_")}`;
+        `Tópico: panama/ruido/${currentZone.toLowerCase().replace(/ /g, "_")}`;
       addLog(`GPS: ${currentZone}`, "ok");
     }, err => {
       currentZone = "desconocido";
@@ -341,7 +348,6 @@ async function startSensor() {
     updateDisplay();
   }, 30000);
 
-  // Actualizar display cada segundo
   setInterval(updateDisplay, 1000);
 }
 
@@ -349,10 +355,10 @@ function connectMQTT() {
   addLog("Conectando a broker MQTT HiveMQ...", "");
   const url = `wss://${MQTT_CONFIG.host}:${MQTT_CONFIG.port}/mqtt`;
   mqttClient = mqtt.connect(url, {
-    clientId: MQTT_CONFIG.clientId,
-    username: MQTT_CONFIG.username,
-    password: MQTT_CONFIG.password,
-    clean: true,
+    clientId:       MQTT_CONFIG.clientId,
+    username:       MQTT_CONFIG.username,
+    password:       MQTT_CONFIG.password,
+    clean:          true,
     reconnectPeriod: 5000,
     connectTimeout: 10000
   });
@@ -362,13 +368,11 @@ function connectMQTT() {
     document.getElementById("status-text").textContent = "Conectado — enviando datos";
     document.getElementById("status-dot").style.background = "#1D9E75";
   });
-
   mqttClient.on("error", err => {
     addLog("Error MQTT: " + err.message, "err");
     document.getElementById("status-text").textContent = "Error de conexión";
     document.getElementById("status-dot").style.background = "#E24B4A";
   });
-
   mqttClient.on("offline", () => {
     addLog("Broker desconectado — reintentando...", "warn");
     document.getElementById("status-text").textContent = "Reconectando...";
@@ -378,16 +382,15 @@ function connectMQTT() {
 
 function publishReading() {
   if (!mqttClient || !mqttClient.connected) return;
-
-  const db = getDb();
-  const topic = `panama/ruido/${currentZone.toLowerCase().replace(/ /g,"_")}`;
+  const db    = getDb();
+  const topic = `panama/ruido/${currentZone.toLowerCase().replace(/ /g, "_")}`;
   const payload = JSON.stringify({
-    db: db,
-    lat: currentLat,
-    lon: currentLon,
-    zona: currentZone,
+    db:        db,
+    lat:       currentLat,
+    lon:       currentLon,
+    zona:      currentZone,
     timestamp: new Date().toISOString(),
-    clientId: MQTT_CONFIG.clientId
+    clientId:  MQTT_CONFIG.clientId
   });
 
   const t0 = Date.now();
@@ -405,9 +408,9 @@ function publishReading() {
 }
 
 function updateDisplay() {
-  const db = getDb();
-  const dbEl = document.getElementById("db-value");
-  const bar = document.getElementById("db-bar");
+  const db      = getDb();
+  const dbEl    = document.getElementById("db-value");
+  const bar     = document.getElementById("db-bar");
   const alertBox = document.getElementById("alert-box");
 
   dbEl.textContent = db;
@@ -415,23 +418,24 @@ function updateDisplay() {
   bar.style.width = pct + "%";
 
   let color;
-  if (db < 55) { color = "#1D9E75"; }
+  if (db < 55)      { color = "#1D9E75"; }
   else if (db < 65) { color = "#EF9F27"; }
-  else { color = "#E24B4A"; }
+  else              { color = "#E24B4A"; }
 
-  dbEl.style.color = color;
-  bar.style.background = color;
+  dbEl.style.color       = color;
+  bar.style.background   = color;
   alertBox.style.display = db >= 65 ? "block" : "none";
 }
 
 function stopSensor() {
   clearInterval(readingInterval);
-  if (mqttClient) { mqttClient.end(); }
+  if (mqttClient)   { mqttClient.end(); }
   if (audioContext) { audioContext.close(); }
-  document.getElementById("sensor-screen").style.display = "none";
+  document.getElementById("sensor-screen").style.display  = "none";
   document.getElementById("consent-screen").style.display = "block";
-  document.getElementById("consent-check").checked = false;
-  document.getElementById("btn-start-sensor").disabled = true;
+  document.getElementById("consent-check").checked        = false;
+  document.getElementById("btn-start-sensor").disabled    = true;
+  MQTT_CONFIG = null; // limpiar config al detener
 }
 </script>
 </body>
