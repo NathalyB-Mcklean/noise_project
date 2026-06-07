@@ -48,9 +48,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .map-legend { position: absolute; bottom: 20px; left: 14px; z-index: 999; background: rgba(10,22,40,0.92); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 11px; }
 .leg-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--muted); }
 .leg-dot { width: 10px; height: 10px; border-radius: 50%; }
-/* Leaflet popup dark */
 .leaflet-popup-content-wrapper { background: #111f35 !important; color: #e8f4f0 !important; border: 1px solid #1a3a5c !important; }
 .leaflet-popup-tip { background: #111f35 !important; }
+#btn-heatmap {
+  position: absolute; top: 14px; right: 14px; z-index: 999;
+  background: #111f35; border: 1px solid #1a3a5c; color: #e8f4f0;
+  padding: 7px 14px; border-radius: 8px; font-size: 12px; cursor: pointer;
+  transition: background 0.2s;
+}
+#btn-heatmap:hover { background: #1a3a5c; }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
@@ -83,6 +89,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <div class="main">
   <div id="map-container">
     <div id="map"></div>
+    <button id="btn-heatmap" onclick="toggleHeatmap()">🌡️ Ver heatmap</button>
     <div class="map-legend">
       <div style="font-weight:600;color:var(--text);margin-bottom:6px;font-size:11px">Nivel de ruido</div>
       <div class="leg-row"><div class="leg-dot" style="background:#1D9E75"></div>&lt; 55 dB — Normal</div>
@@ -115,12 +122,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/socket.io@4.7.5/dist/socket.io.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 const dbColor = db => db < 55 ? "#1D9E75" : db < 65 ? "#EF9F27" : "#E24B4A";
 
-// MAPA — OpenStreetMap estándar
+// MAPA
 const map = L.map("map").setView([9.0, -79.52], 12);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "© OpenStreetMap contributors",
@@ -128,6 +135,34 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 const markers = {}, circles = {};
+let heatmapActive = false;
+
+// TOGGLE HEATMAP
+function toggleHeatmap() {
+  heatmapActive = !heatmapActive;
+  const btn = document.getElementById("btn-heatmap");
+  if (heatmapActive) {
+    Object.values(markers).forEach(m => map.removeLayer(m));
+    Object.values(circles).forEach(c => {
+      c.setStyle({ fillOpacity: 0.4, weight: 0 });
+      c.setRadius(800);
+    });
+    btn.textContent = "📍 Ver marcadores";
+    btn.style.background = "#1D3A2E";
+    btn.style.borderColor = "#1D9E75";
+  } else {
+    Object.values(markers).forEach(m => m.addTo(map));
+    Object.keys(circles).forEach(zona => {
+      const c = circles[zona];
+      const r = zonas[zona];
+      c.setStyle({ fillOpacity: 0.15, weight: 0 });
+      c.setRadius(200 + r.db * 6);
+    });
+    btn.textContent = "🌡️ Ver heatmap";
+    btn.style.background = "#111f35";
+    btn.style.borderColor = "#1a3a5c";
+  }
+}
 
 function makeIcon(db) {
   const c = dbColor(db);
@@ -151,16 +186,20 @@ function updateMarker(r) {
 
   if (markers[r.zona]) {
     markers[r.zona].setIcon(makeIcon(r.db)).setPopupContent(popup);
-    circles[r.zona].setStyle({color: dbColor(r.db), fillColor: dbColor(r.db)})
-                   .setRadius(200 + r.db * 6);
+    if (!heatmapActive) {
+      circles[r.zona].setStyle({ color: dbColor(r.db), fillColor: dbColor(r.db) })
+                     .setRadius(200 + r.db * 6);
+    } else {
+      circles[r.zona].setStyle({ color: dbColor(r.db), fillColor: dbColor(r.db) });
+    }
   } else {
-    circles[r.zona] = L.circle([lat,lon], {
+    circles[r.zona] = L.circle([lat, lon], {
       radius: 200 + r.db * 6,
       color: dbColor(r.db), fillColor: dbColor(r.db),
       fillOpacity: 0.15, weight: 0
     }).addTo(map);
-    markers[r.zona] = L.marker([lat,lon], {icon: makeIcon(r.db)})
-      .bindPopup(popup).addTo(map);
+    markers[r.zona] = L.marker([lat, lon], { icon: makeIcon(r.db) })
+      .bindPopup(popup, { autoPan: false }).addTo(map);
   }
 }
 
@@ -222,8 +261,8 @@ function updateSidebar() {
 function flyTo(zona) {
   const r = zonas[zona];
   if (r && r.lat && r.lon) {
-    map.flyTo([parseFloat(r.lat), parseFloat(r.lon)], 14, {duration: 0.8});
-    if (markers[zona]) markers[zona].openPopup();
+    map.flyTo([parseFloat(r.lat), parseFloat(r.lon)], 14, { duration: 0.8 });
+    if (markers[zona] && !heatmapActive) markers[zona].openPopup();
   }
 }
 
@@ -271,8 +310,25 @@ socket.on("alerta", r => {
 
 setInterval(() => {
   document.getElementById("clock").textContent = new Date().toLocaleTimeString("es-PA");
-  updateSidebar();
 }, 1000);
+
+setInterval(() => {
+  updateSidebar();
+}, 10000);
+
+// Limpiar nodos inactivos hace más de 5 minutos
+setInterval(() => {
+  const ahora = Date.now();
+  Object.keys(zonas).forEach(zona => {
+    const r = zonas[zona];
+    if (ahora - new Date(r.timestamp) > 5 * 60 * 1000) {
+      if (markers[zona]) { map.removeLayer(markers[zona]); delete markers[zona]; }
+      if (circles[zona]) { map.removeLayer(circles[zona]); delete circles[zona]; }
+      delete zonas[zona];
+      addLog(`Nodo ${zona} removido por inactividad`, "warn");
+    }
+  });
+}, 60000);
 </script>
 </body>
 </html>
