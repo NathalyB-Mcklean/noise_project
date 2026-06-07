@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcústicaPTY — Nodo Sensor</title>
+<meta name="theme-color" content="#0F6E56">
+<link rel="manifest" href="manifest.json">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a1628;
+    color: #e8f4f0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: #111f35;
+    border: 1px solid #1a3a5c;
+    border-radius: 20px;
+    padding: 32px 28px;
+    width: 100%;
+    max-width: 380px;
+  }
+  .header { text-align: center; margin-bottom: 28px; }
+  .logo-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #1D9E75; display: inline-block;
+    margin-right: 8px; vertical-align: middle;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  h1 { font-size: 20px; font-weight: 600; color: #e8f4f0; }
+  .subtitle { font-size: 13px; color: #6b8fa8; margin-top: 4px; }
+
+  /* PANTALLA DE CONSENTIMIENTO */
+  #consent-screen { display: block; }
+  #sensor-screen { display: none; }
+  .consent-box {
+    background: #0d1a2e;
+    border: 1px solid #1a3a5c;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: #9ab5cc;
+    line-height: 1.7;
+  }
+  .consent-box strong { color: #e8f4f0; }
+  .consent-item { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start; }
+  .consent-icon { color: #1D9E75; font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  label.check-row {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: #9ab5cc; cursor: pointer;
+    padding: 12px 0; border-top: 1px solid #1a3a5c;
+  }
+  input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; accent-color: #1D9E75; }
+  .btn {
+    width: 100%; padding: 14px;
+    border-radius: 12px; border: none;
+    font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+    margin-top: 12px;
+  }
+  .btn-primary { background: #1D9E75; color: white; }
+  .btn-primary:hover { background: #16876A; }
+  .btn-primary:disabled { background: #1a3a5c; color: #4a6a8a; cursor: not-allowed; }
+  .btn-stop { background: #7A1F1F; color: #ffaaaa; }
+  .btn-stop:hover { background: #9a2a2a; }
+
+  /* PANTALLA SENSOR */
+  .db-display {
+    text-align: center;
+    background: #0d1a2e;
+    border-radius: 16px;
+    padding: 24px 16px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .db-number { font-size: 72px; font-weight: 700; line-height: 1; transition: color 0.3s; }
+  .db-unit { font-size: 20px; color: #6b8fa8; margin-top: 4px; }
+  .db-bar-bg { height: 8px; background: #1a3a5c; border-radius: 4px; margin-top: 16px; overflow: hidden; }
+  .db-bar { height: 100%; border-radius: 4px; transition: width 0.5s, background 0.3s; }
+
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px;
+    font-size: 12px; font-weight: 500; margin-top: 8px;
+  }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .info-cell {
+    background: #0d1a2e;
+    border: 1px solid #1a3a5c;
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .info-label { font-size: 10px; color: #6b8fa8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .info-value { font-size: 14px; font-weight: 500; color: #e8f4f0; word-break: break-all; }
+
+  .log {
+    background: #0d1a2e;
+    border: 1px solid #1a3a5c;
+    border-radius: 10px;
+    padding: 10px;
+    height: 90px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+  }
+  .log p { font-size: 11px; font-family: monospace; color: #6b8fa8; line-height: 1.6; }
+  .log p.ok { color: #1D9E75; }
+  .log p.warn { color: #EF9F27; }
+  .log p.err { color: #E24B4A; }
+
+  .topic-display {
+    font-size: 10px; color: #6b8fa8;
+    font-family: monospace; text-align: center;
+    background: #0d1a2e; border-radius: 8px; padding: 6px;
+    margin-bottom: 16px; word-break: break-all;
+  }
+  .alert-box {
+    background: #2a0d0d; border: 1px solid #7A1F1F;
+    border-radius: 10px; padding: 10px 14px;
+    font-size: 13px; color: #ffaaaa;
+    margin-bottom: 12px; display: none;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <span class="logo-dot"></span>
+    <span style="font-size:18px;font-weight:700">AcústicaPTY</span>
+    <div class="subtitle">Nodo sensor ciudadano</div>
+  </div>
+
+  <!-- PANTALLA 1: CONSENTIMIENTO -->
+  <div id="consent-screen">
+    <div class="consent-box">
+      <div class="consent-item">
+        <span class="consent-icon">🎙️</span>
+        <span><strong>Solo mide dB.</strong> Tu micrófono captura únicamente el nivel de presión sonora (un número). El audio crudo nunca se graba ni transmite.</span>
+      </div>
+      <div class="consent-item">
+        <span class="consent-icon">📍</span>
+        <span><strong>Ubicación aproximada.</strong> Se usa tu corregimiento (zona geográfica), no tu dirección exacta.</span>
+      </div>
+      <div class="consent-item">
+        <span class="consent-icon">🔒</span>
+        <span><strong>Sin datos personales.</strong> No se recopila nombre, correo ni ningún identificador. Cumple la Ley 81 de 2019.</span>
+      </div>
+      <div class="consent-item">
+        <span class="consent-icon">📡</span>
+        <span><strong>Protocolo MQTT.</strong> Los datos se publican bajo el tópico <code>panama/ruido/[corregimiento]</code> cada 30 segundos.</span>
+      </div>
+    </div>
+    <label class="check-row">
+      <input type="checkbox" id="consent-check" onchange="checkConsent()">
+      Entiendo y acepto participar como nodo sensor
+    </label>
+    <button class="btn btn-primary" id="btn-start-sensor" disabled onclick="startSensor()">
+      Activar sensor
+    </button>
+  </div>
+
+  <!-- PANTALLA 2: SENSOR ACTIVO -->
+  <div id="sensor-screen">
+    <div class="db-display">
+      <div class="db-number" id="db-value">--</div>
+      <div class="db-unit">dB(A)</div>
+      <div class="db-bar-bg">
+        <div class="db-bar" id="db-bar" style="width:0%;background:#1D9E75"></div>
+      </div>
+      <div>
+        <span class="status-badge" id="status-badge" style="background:#0d2a1e">
+          <span class="status-dot" id="status-dot" style="background:#1D9E75"></span>
+          <span id="status-text">Iniciando...</span>
+        </span>
+      </div>
+    </div>
+
+    <div id="alert-box" class="alert-box">
+      ⚠️ Nivel supera 65 dB — Límite OMS
+    </div>
+
+    <div class="info-grid">
+      <div class="info-cell">
+        <div class="info-label">Corregimiento</div>
+        <div class="info-value" id="zone-display">Detectando...</div>
+      </div>
+      <div class="info-cell">
+        <div class="info-label">Lecturas enviadas</div>
+        <div class="info-value" id="readings-count">0</div>
+      </div>
+      <div class="info-cell">
+        <div class="info-label">Latencia MQTT</div>
+        <div class="info-value" id="latency-display">--</div>
+      </div>
+      <div class="info-cell">
+        <div class="info-label">GPS</div>
+        <div class="info-value" id="gps-display">Obteniendo...</div>
+      </div>
+    </div>
+
+    <div class="topic-display" id="topic-display">
+      Tópico: panama/ruido/[corregimiento]
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <button class="btn btn-stop" onclick="stopSensor()">Detener sensor</button>
+  </div>
+</div>
+
+<!-- MQTT via CDN -->
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+// =============================================
+// CONFIGURACIÓN — edita estos valores con los
+// datos de tu cuenta HiveMQ Cloud gratuita
+// hivemq.com/mqtt-cloud
+// =============================================
+const MQTT_CONFIG = {
+  host: "3c75291ac00841a5a6f52b8c24db510a.s1.eu.hivemq.cloud",   // <-- reemplaza
+  port: 8884,                             // WebSocket TLS
+  username: "panama_ruido",                 // <-- reemplaza
+  password: "Ruido2026!",              // <-- reemplaza
+  clientId: "sensor_" + Math.random().toString(36).substr(2, 8)
+};
+// =============================================
+
+// Mapeo de coordenadas a corregimientos de Ciudad de Panamá
+const CORREGIMIENTOS = [
+  { name: "Bella Vista",    lat: 8.9936,  lon: -79.5197 },
+  { name: "San Francisco",  lat: 8.9900,  lon: -79.5050 },
+  { name: "Miraflores",     lat: 9.0021,  lon: -79.5350 },
+  { name: "Calidonia",      lat: 8.9978,  lon: -79.5297 },
+  { name: "El Cangrejo",    lat: 8.9941,  lon: -79.5198 },
+  { name: "Río Abajo",      lat: 9.0050,  lon: -79.4900 },
+  { name: "Betania",        lat: 9.0100,  lon: -79.5400 },
+  { name: "Pueblo Nuevo",   lat: 9.0080,  lon: -79.4980 },
+  { name: "Curundú",        lat: 9.0030,  lon: -79.5380 },
+  { name: "Ancón",          lat: 8.9850,  lon: -79.5550 }
+];
+
+let audioContext, analyser, microphone, dataArray;
+let mqttClient = null;
+let readingInterval = null;
+let readingsCount = 0;
+let currentZone = "desconocido";
+let currentLat = null, currentLon = null;
+
+function checkConsent() {
+  const checked = document.getElementById("consent-check").checked;
+  document.getElementById("btn-start-sensor").disabled = !checked;
+}
+
+function addLog(msg, type = "") {
+  const log = document.getElementById("log");
+  const p = document.createElement("p");
+  p.className = type;
+  const now = new Date().toLocaleTimeString("es-PA");
+  p.textContent = `[${now}] ${msg}`;
+  log.appendChild(p);
+  while (log.children.length > 20) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+function nearestCorregimiento(lat, lon) {
+  let best = CORREGIMIENTOS[0], bestDist = Infinity;
+  CORREGIMIENTOS.forEach(c => {
+    const d = Math.sqrt((c.lat-lat)**2 + (c.lon-lon)**2);
+    if (d < bestDist) { bestDist = d; best = c; }
+  });
+  return best.name;
+}
+
+function getDb() {
+  if (!analyser) return 0;
+  analyser.getByteFrequencyData(dataArray);
+  let sum = 0;
+  for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+  const avg = sum / dataArray.length;
+  // Mapeo de 0-255 a rango de dB útil (35-100 dB)
+  return Math.round(35 + (avg / 255) * 65);
+}
+
+async function startSensor() {
+  document.getElementById("consent-screen").style.display = "none";
+  document.getElementById("sensor-screen").style.display = "block";
+
+  // 1) MICRÓFONO — Web Audio API
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+    microphone = audioContext.createMediaStreamSource(stream);
+    microphone.connect(analyser);
+    addLog("Micrófono activado (Web Audio API)", "ok");
+  } catch(e) {
+    addLog("Error al acceder al micrófono: " + e.message, "err");
+    return;
+  }
+
+  // 2) GPS — Geolocation API
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      currentLat = pos.coords.latitude.toFixed(5);
+      currentLon = pos.coords.longitude.toFixed(5);
+      currentZone = nearestCorregimiento(+currentLat, +currentLon);
+      document.getElementById("gps-display").textContent = `${currentLat}, ${currentLon}`;
+      document.getElementById("zone-display").textContent = currentZone;
+      document.getElementById("topic-display").textContent =
+        `Tópico: panama/ruido/${currentZone.toLowerCase().replace(/ /g,"_")}`;
+      addLog(`GPS: ${currentZone}`, "ok");
+    }, err => {
+      currentZone = "desconocido";
+      document.getElementById("gps-display").textContent = "No disponible";
+      document.getElementById("zone-display").textContent = "Desconocido";
+      addLog("GPS no disponible — usando zona desconocida", "warn");
+    });
+  }
+
+  // 3) CONEXIÓN MQTT
+  connectMQTT();
+
+  // 4) LECTURA cada 30 segundos
+  updateDisplay();
+  readingInterval = setInterval(() => {
+    publishReading();
+    updateDisplay();
+  }, 30000);
+
+  // Actualizar display cada segundo
+  setInterval(updateDisplay, 1000);
+}
+
+function connectMQTT() {
+  addLog("Conectando a broker MQTT HiveMQ...", "");
+  const url = `wss://${MQTT_CONFIG.host}:${MQTT_CONFIG.port}/mqtt`;
+  mqttClient = mqtt.connect(url, {
+    clientId: MQTT_CONFIG.clientId,
+    username: MQTT_CONFIG.username,
+    password: MQTT_CONFIG.password,
+    clean: true,
+    reconnectPeriod: 5000,
+    connectTimeout: 10000
+  });
+
+  mqttClient.on("connect", () => {
+    addLog("✓ Broker MQTT conectado (QoS 1)", "ok");
+    document.getElementById("status-text").textContent = "Conectado — enviando datos";
+    document.getElementById("status-dot").style.background = "#1D9E75";
+  });
+
+  mqttClient.on("error", err => {
+    addLog("Error MQTT: " + err.message, "err");
+    document.getElementById("status-text").textContent = "Error de conexión";
+    document.getElementById("status-dot").style.background = "#E24B4A";
+  });
+
+  mqttClient.on("offline", () => {
+    addLog("Broker desconectado — reintentando...", "warn");
+    document.getElementById("status-text").textContent = "Reconectando...";
+    document.getElementById("status-dot").style.background = "#EF9F27";
+  });
+}
+
+function publishReading() {
+  if (!mqttClient || !mqttClient.connected) return;
+
+  const db = getDb();
+  const topic = `panama/ruido/${currentZone.toLowerCase().replace(/ /g,"_")}`;
+  const payload = JSON.stringify({
+    db: db,
+    lat: currentLat,
+    lon: currentLon,
+    zona: currentZone,
+    timestamp: new Date().toISOString(),
+    clientId: MQTT_CONFIG.clientId
+  });
+
+  const t0 = Date.now();
+  mqttClient.publish(topic, payload, { qos: 1 }, (err) => {
+    if (err) {
+      addLog("Error al publicar: " + err.message, "err");
+    } else {
+      const latency = Date.now() - t0;
+      readingsCount++;
+      document.getElementById("readings-count").textContent = readingsCount;
+      document.getElementById("latency-display").textContent = latency + " ms";
+      addLog(`Publicado → ${topic} | ${db} dB | ${latency}ms`, db > 65 ? "warn" : "ok");
+    }
+  });
+}
+
+function updateDisplay() {
+  const db = getDb();
+  const dbEl = document.getElementById("db-value");
+  const bar = document.getElementById("db-bar");
+  const alertBox = document.getElementById("alert-box");
+
+  dbEl.textContent = db;
+  const pct = Math.min(100, ((db - 30) / 70) * 100);
+  bar.style.width = pct + "%";
+
+  let color;
+  if (db < 55) { color = "#1D9E75"; }
+  else if (db < 65) { color = "#EF9F27"; }
+  else { color = "#E24B4A"; }
+
+  dbEl.style.color = color;
+  bar.style.background = color;
+  alertBox.style.display = db >= 65 ? "block" : "none";
+}
+
+function stopSensor() {
+  clearInterval(readingInterval);
+  if (mqttClient) { mqttClient.end(); }
+  if (audioContext) { audioContext.close(); }
+  document.getElementById("sensor-screen").style.display = "none";
+  document.getElementById("consent-screen").style.display = "block";
+  document.getElementById("consent-check").checked = false;
+  document.getElementById("btn-start-sensor").disabled = true;
+}
+</script>
+</body>
+</html>
