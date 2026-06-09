@@ -5,17 +5,19 @@ import random
 import threading
 import statistics
 import datetime
+import os
+from dotenv import load_dotenv
 
-# ─────────────────────────────────────────
-# CONFIGURACIÓN — debe coincidir con tu .env
-# ─────────────────────────────────────────
-BROKER_HOST = "3c75291ac00841a5a6f52b8c24db510a.s1.eu.hivemq.cloud"  # <-- igual que MQTT_HOST en tu .env
-BROKER_PORT = 8883                            # TLS, igual que el servidor
-MQTT_USER   = "panama_ruido"                   # igual que MQTT_USER en tu .env
-MQTT_PASS   = "Ruido2026!"                # igual que MQTT_PASS en tu .env
+# Carga las credenciales
+load_dotenv(os.path.join(os.path.dirname(__file__), "project", "servidor", ".env"))
+
+BROKER_HOST = os.getenv("MQTT_HOST", "")
+BROKER_PORT = 8883
+MQTT_USER   = os.getenv("MQTT_USER", "")
+MQTT_PASS   = os.getenv("MQTT_PASS", "")
 TOPIC_BASE  = "panama/ruido"
 
-# Zonas reales de Panamá con coordenadas
+# Zonas de Panama
 ZONAS = [
     {"zona": "Río Abajo",       "lat": 9.0349,  "lon": -79.4797},
     {"zona": "San Francisco",   "lat": 8.9936,  "lon": -79.5073},
@@ -58,13 +60,6 @@ def crear_cliente(nombre):
     return client
 
 def generar_db(zona_nombre):
-    """
-    Genera dB realistas según el tipo de zona.
-    Normal    → < 55 dB  (verde)
-    Moderado  → 55–65 dB (amarillo)
-    Alerta    → > 65 dB  (rojo / supera OMS)
-    Referencia PPT slide 2: >70 dB en zonas de alto tráfico
-    """
     zonas_trafico = ["Juan Díaz", "San Miguelito", "Tocumen", "El Chorrillo"]
     zonas_mixtas  = ["San Francisco", "Bella Vista", "El Dorado", "Calidonia"]
 
@@ -76,7 +71,6 @@ def generar_db(zona_nombre):
         return round(random.uniform(38, 58), 1)   # Normal / mínimo
 
 def publicar_nodo(zona_data, n_mensajes=3, intervalo=1):
-    """Simula un nodo sensor: conecta, publica N veces, desconecta."""
     try:
         client = crear_cliente(zona_data["zona"])
         client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
@@ -133,7 +127,7 @@ def prueba_carga(n_nodos, label):
 
     if latencias_mqtt:
         prom = statistics.mean(latencias_mqtt)
-        print(f"\n  📊 Resultados:")
+        print(f"\n  Resultados:")
         print(f"     Mensajes enviados : {len(latencias_mqtt)}")
         print(f"     Latencia promedio : {prom:.1f} ms")
         print(f"     Latencia mínima   : {min(latencias_mqtt):.1f} ms")
@@ -189,7 +183,6 @@ def prueba_alertas():
         print(f"  ❌ Error en prueba de alertas: {e}")
 
 def prueba_nodo_inactivo():
-    """Publica un nodo que no vuelve a enviar → debe desaparecer en 5 min."""
     print(f"\n{'═'*60}")
     print("  PRUEBA: Nodo inactivo (desaparece tras 5 min sin datos)")
     print(f"{'═'*60}")
@@ -209,8 +202,7 @@ def prueba_nodo_inactivo():
         }
         result = client.publish(topic, json.dumps(payload), qos=1)
         result.wait_for_publish()
-        print("  ✅ Nodo publicado — debe aparecer en el mapa.")
-        print("  ⏳ Espera 5 minutos sin publicar → debe desaparecer solo.")
+        print("  Nodo publicado — debe aparecer en el mapa.")
 
         client.loop_stop()
         client.disconnect()
@@ -218,19 +210,9 @@ def prueba_nodo_inactivo():
     except Exception as e:
         print(f"  ❌ Error: {e}")
 
-# ─────────────────────────────────────────
 # MAIN
-# ─────────────────────────────────────────
 if __name__ == "__main__":
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║        AcústicaPTY — Suite de Pruebas v2.0              ║")
-    print(f"║  Broker: {BROKER_HOST[:45]:<45} ║")
-    print("╚══════════════════════════════════════════════════════════╝")
-    print("\n⚠️  Asegúrate de:")
-    print("   1. Tener el servidor corriendo (node server.js)")
-    print("   2. Tener el dashboard abierto en localhost:3000")
-    print("   3. Haber puesto tu BROKER_HOST, MQTT_USER y MQTT_PASS arriba\n")
-    input("   Presiona ENTER cuando el dashboard esté abierto...")
+    input("   Pruebas. Presiona ENTER para continuar.")
 
     resultados = []
 
@@ -246,13 +228,13 @@ if __name__ == "__main__":
 
     # Prueba máximo: 50 nodos (usa los 25 disponibles repetidos si hacen falta)
     zonas_50 = (ZONAS * 2)[:50]
-    # Añadir sufijo para que sean zonas únicas en el dashboard
+
+    # Añadir sufijo para que sean zonas únicas
     for i, z in enumerate(zonas_50[len(ZONAS):]):
         zonas_50[len(ZONAS) + i] = {**z, "zona": z["zona"] + " B"}
     ZONAS_BACKUP = ZONAS.copy()
 
     import types
-    # Hack limpio: pasar lista directamente
     latencias_mqtt.clear()
     print(f"\n{'═'*60}")
     print("  PRUEBA: MÁXIMO — 50 nodos concurrentes")
@@ -264,7 +246,7 @@ if __name__ == "__main__":
     dur = time.time() - t0
     if latencias_mqtt:
         prom = statistics.mean(latencias_mqtt)
-        print(f"\n  📊 Resultados:")
+        print(f"\n  Resultados:")
         print(f"     Mensajes enviados : {len(latencias_mqtt)}")
         print(f"     Latencia promedio : {prom:.1f} ms")
         print(f"     Latencia mínima   : {min(latencias_mqtt):.1f} ms")
@@ -294,6 +276,3 @@ if __name__ == "__main__":
     for r in resultados:
         cumple = "✅" if r["cumple"] else "❌"
         print(f"  {r['label']:<30} {r['promedio_ms']:>11.1f} ms {r['max_ms']:>7.1f} ms  {cumple}")
-    print(f"\n  Meta del proyecto (PPT slide 8): latencia MQTT < 500 ms")
-    print(f"  Referencia real medida: ~202 ms con 1 nodo ✅")
-    print(f"\n  Pruebas completadas. Toma capturas del dashboard ahora.")

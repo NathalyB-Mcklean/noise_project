@@ -1,8 +1,4 @@
-// =============================================
-// SERVIDOR CENTRAL — AcústicaPTY
-// Node.js + Express + MQTT + Socket.io + Firebase + Swagger
-// =============================================
-
+// SERVIDOR CENTRAL 
 require("dotenv").config();
 const express    = require("express");
 const http       = require("http");
@@ -13,17 +9,21 @@ const swaggerUi  = require("swagger-ui-express");
 const cors       = require("cors");
 
 // --- CONFIGURACIÓN ---
-const MQTT_HOST    = process.env.MQTT_HOST    || "3c75291ac00841a5a6f52b8c24db510a.s1.eu.hivemq.cloud";
-const MQTT_USER    = process.env.MQTT_USER    || "panama_ruido";
-const MQTT_PASS    = process.env.MQTT_PASS    || "Ruido2026!";
-const ALERT_EMAIL  = process.env.ALERT_EMAIL  || "tu_correo@gmail.com";
-const EMAIL_PASS   = process.env.EMAIL_PASS   || "tu_app_password";
-const ALERT_TO     = process.env.ALERT_TO     || "tu_correo@gmail.com";
-const PORT         = process.env.PORT         || 3000;
-const DB_LIMITE    = 65;
+const MQTT_HOST   = process.env.MQTT_HOST;
+const MQTT_USER   = process.env.MQTT_USER;
+const MQTT_PASS   = process.env.MQTT_PASS;
+const ALERT_EMAIL = process.env.ALERT_EMAIL || "";
+const EMAIL_PASS  = process.env.EMAIL_PASS  || "";
+const ALERT_TO    = process.env.ALERT_TO    || "";
+const PORT        = process.env.PORT        || 3000;
+const DB_LIMITE   = 65;
+
+if (!MQTT_HOST || !MQTT_USER || !MQTT_PASS) {
+  console.error("Faltan variables de entorno MQTT. Revisa el archivo .env");
+  process.exit(1);
+}
 
 // --- SANITIZACIÓN XSS ---
-// Escapa caracteres peligrosos para prevenir JS Injection
 function sanitize(str) {
   if (typeof str !== "string") return String(str || "");
   return str
@@ -42,12 +42,12 @@ const server = http.createServer(app);
 const io     = socketIo(server, { cors: { origin: "*" } });
 
 app.use(cors());
-app.use(express.json({ limit: "10kb" })); // limitar tamaño del body
+app.use(express.json({ limit: "10kb" }));
 app.use(express.static("public"));
 
 // --- MEMORIA ---
-let readings      = [];
-let latestByZone  = {};
+let readings     = [];
+let latestByZone = {};
 
 // --- CLIENTE MQTT ---
 const mqttUrl = `mqtts://${MQTT_HOST}:8883`;
@@ -74,7 +74,6 @@ mqttClient.on("message", async (topic, message) => {
   try {
     const data = JSON.parse(message.toString());
 
-    // VALIDACIÓN — rechazar mensajes malformados
     if (typeof data.db === "undefined" || isNaN(parseFloat(data.db))) {
       console.warn("Mensaje MQTT inválido ignorado:", topic);
       return;
@@ -82,7 +81,6 @@ mqttClient.on("message", async (topic, message) => {
 
     const dbVal = parseFloat(data.db);
 
-    // Validar rango físico realista de dB
     if (dbVal < 0 || dbVal > 150) {
       console.warn(`Valor dB fuera de rango (${dbVal}) — ignorado`);
       return;
@@ -127,6 +125,7 @@ const transporter = nodemailer.createTransport({
 
 let ultimaAlertaEnviada = {};
 async function enviarAlertaEmail(reading) {
+  if (!ALERT_EMAIL || !EMAIL_PASS) return;
   const ahora = Date.now();
   if (ultimaAlertaEnviada[reading.zona] &&
       ahora - ultimaAlertaEnviada[reading.zona] < 5 * 60 * 1000) return;
@@ -275,17 +274,6 @@ const swaggerSpec = {
   }
 };
 
-
-// Endpoint de configuración para el sensor PWA
-// Las credenciales vienen del .env, nunca del código fuente
-app.get("/api/config", (req, res) => {
-  res.json({
-    mqttHost: MQTT_HOST,
-    mqttPort: parseInt(process.env.MQTT_PORT) || 8884,
-    mqttUser: MQTT_USER,
-    mqttPass: MQTT_PASS
-  });
-});
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // --- SOCKET.IO ---
@@ -300,7 +288,6 @@ io.on("connection", (socket) => {
 
 // --- INICIAR ---
 server.listen(PORT, () => {
-  console.log(`\n🎙️  AcústicaPTY en http://localhost:${PORT}`);
-  console.log(`📡  API: http://localhost:${PORT}/api/lecturas`);
-  console.log(`📖  Swagger: http://localhost:${PORT}/api/docs\n`);
+  console.log(`\n  AcústicaPTY en http://localhost:${PORT}`);
+  console.log(`  AcústicaPTY PWA en http://localhost:${PORT}/index_pwa.html`);
 });

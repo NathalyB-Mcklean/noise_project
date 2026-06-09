@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AcústicaPTY — Nodo Sensor</title>
 <meta name="theme-color" content="#0F6E56">
-<link rel="manifest" href="manifest.json">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -52,7 +51,6 @@
   }
   .consent-box strong { color: #e8f4f0; }
   .consent-item { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start; }
-  .consent-icon { color: #1D9E75; font-size: 16px; flex-shrink: 0; margin-top: 1px; }
   label.check-row {
     display: flex; align-items: center; gap: 10px;
     font-size: 13px; color: #9ab5cc; cursor: pointer;
@@ -140,20 +138,13 @@
   <div id="consent-screen">
     <div class="consent-box">
       <div class="consent-item">
-        <span class="consent-icon">🎙️</span>
         <span><strong>Solo mide dB.</strong> Tu micrófono captura únicamente el nivel de presión sonora (un número). El audio crudo nunca se graba ni transmite.</span>
       </div>
       <div class="consent-item">
-        <span class="consent-icon">📍</span>
         <span><strong>Ubicación aproximada.</strong> Se usa tu corregimiento (zona geográfica), no tu dirección exacta.</span>
       </div>
       <div class="consent-item">
-        <span class="consent-icon">🔒</span>
         <span><strong>Sin datos personales.</strong> No se recopila nombre, correo ni ningún identificador. Cumple la Ley 81 de 2019.</span>
-      </div>
-      <div class="consent-item">
-        <span class="consent-icon">📡</span>
-        <span><strong>Protocolo MQTT.</strong> Los datos se publican bajo el tópico <code>panama/ruido/[corregimiento]</code> cada 30 segundos.</span>
       </div>
     </div>
     <label class="check-row">
@@ -216,26 +207,14 @@
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
-// Las credenciales NO están aquí — vienen del servidor via /api/config
-let MQTT_CONFIG = null;
-
-async function cargarConfig() {
-  try {
-    const res = await fetch("/api/config");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const cfg = await res.json();
-    MQTT_CONFIG = {
-      host:     cfg.mqttHost,
-      port:     cfg.mqttPort,
-      username: cfg.mqttUser,
-      password: cfg.mqttPass,
-      clientId: "sensor_" + Math.random().toString(36).substr(2, 8)
-    };
-    addLog("Configuración cargada desde servidor", "ok");
-  } catch (e) {
-    addLog("Error al cargar configuración: " + e.message, "err");
-  }
-}
+// Credenciales MQTT — viven aquí, no en /api/config
+const MQTT_CONFIG = {
+  host:     "3c75291ac00841a5a6f52b8c24db510a.s1.eu.hivemq.cloud",
+  port:     8884,
+  username: "panama_ruido",
+  password: "Ruido2026!",
+  clientId: "sensor_" + Math.random().toString(36).substr(2, 8)
+};
 
 const CORREGIMIENTOS = [
   { name: "Bella Vista",    lat: 8.9936,  lon: -79.5197 },
@@ -251,11 +230,11 @@ const CORREGIMIENTOS = [
 ];
 
 let audioContext, analyser, microphone, dataArray;
-let mqttClient    = null;
+let mqttClient      = null;
 let readingInterval = null;
-let readingsCount = 0;
-let currentZone   = "desconocido";
-let currentLat    = null, currentLon = null;
+let readingsCount   = 0;
+let currentZone     = "desconocido";
+let currentLat      = null, currentLon = null;
 
 function checkConsent() {
   const checked = document.getElementById("consent-check").checked;
@@ -294,15 +273,6 @@ function getDb() {
 async function startSensor() {
   document.getElementById("consent-screen").style.display = "none";
   document.getElementById("sensor-screen").style.display = "block";
-
-  // 0) CARGAR CONFIGURACIÓN DESDE SERVIDOR (no desde el código)
-  await cargarConfig();
-  if (!MQTT_CONFIG) {
-    addLog("No se pudo cargar configuración. ¿Está el servidor corriendo?", "err");
-    document.getElementById("consent-screen").style.display = "block";
-    document.getElementById("sensor-screen").style.display = "none";
-    return;
-  }
 
   // 1) MICRÓFONO — Web Audio API
   try {
@@ -355,12 +325,12 @@ function connectMQTT() {
   addLog("Conectando a broker MQTT HiveMQ...", "");
   const url = `wss://${MQTT_CONFIG.host}:${MQTT_CONFIG.port}/mqtt`;
   mqttClient = mqtt.connect(url, {
-    clientId:       MQTT_CONFIG.clientId,
-    username:       MQTT_CONFIG.username,
-    password:       MQTT_CONFIG.password,
-    clean:          true,
+    clientId:        MQTT_CONFIG.clientId,
+    username:        MQTT_CONFIG.username,
+    password:        MQTT_CONFIG.password,
+    clean:           true,
     reconnectPeriod: 5000,
-    connectTimeout: 10000
+    connectTimeout:  10000
   });
 
   mqttClient.on("connect", () => {
@@ -408,9 +378,9 @@ function publishReading() {
 }
 
 function updateDisplay() {
-  const db      = getDb();
-  const dbEl    = document.getElementById("db-value");
-  const bar     = document.getElementById("db-bar");
+  const db       = getDb();
+  const dbEl     = document.getElementById("db-value");
+  const bar      = document.getElementById("db-bar");
   const alertBox = document.getElementById("alert-box");
 
   dbEl.textContent = db;
@@ -435,7 +405,6 @@ function stopSensor() {
   document.getElementById("consent-screen").style.display = "block";
   document.getElementById("consent-check").checked        = false;
   document.getElementById("btn-start-sensor").disabled    = true;
-  MQTT_CONFIG = null; // limpiar config al detener
 }
 </script>
 </body>
